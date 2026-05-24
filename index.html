@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🏆Badfish Libertadores🏆</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f0f2f5; color: #1a1a2e; }
+    header { background: #00ff87; padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1rem; }
+    header h1 { font-size: 1.3rem; font-weight: 700; color: #1a1a2e; }
+    header span { font-size: 0.85rem; color: #333; }
+    .container { max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; }
+    .controls { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    input[type=search] { padding: 0.45rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; width: 220px; }
+    select { padding: 0.45rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; background: #fff; }
+    .table-wrap { overflow-x: auto; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    thead tr { background: #1a1a2e; color: #fff; }
+    th { padding: 0.7rem 0.9rem; text-align: left; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; user-select: none; white-space: nowrap; }
+    th:hover { background: #2d2d4e; }
+    th.sorted-asc::after { content: " ▲"; }
+    th.sorted-desc::after { content: " ▼"; }
+    td { padding: 0.65rem 0.9rem; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f7f9ff; }
+    .rank { font-weight: 700; color: #888; width: 40px; }
+    .rank-1 { color: #f5a623; }
+    .rank-2 { color: #9b9b9b; }
+    .rank-3 { color: #c47b3a; }
+    .team-name { font-size: 0.78rem; color: #888; font-weight: 400; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .chip { display: inline-block; padding: 1px 5px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; margin: 1px; }
+    .chip-wildcard { background: #fff3cd; color: #856404; }
+    .chip-freehit { background: #d1ecf1; color: #0c5460; }
+    .chip-3xc { background: #f8d7da; color: #721c24; }
+    .chip-bboost { background: #d4edda; color: #155724; }
+    .sparkline { display: flex; align-items: flex-end; gap: 2px; height: 44px; }
+    .bar { width: 6px; background: #00ff87; border-radius: 2px 2px 0 0; opacity: 0.8; }
+    .chips-cell { white-space: nowrap; }
+    .col-desc { font-size: 0.7rem; font-weight: 400; opacity: 0.65; text-transform: none; letter-spacing: 0; }
+    .hidden { display: none; }
+    #status { padding: 2rem; text-align: center; color: #888; }
+    .rank { position: sticky; left: 0; background: #fff; z-index: 1; }
+    .manager { position: sticky; left: 40px; background: #fff; z-index: 1; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
+    thead .rank, thead .manager-th { position: sticky; background: #1a1a2e; z-index: 2; }
+    thead .rank { left: 0; }
+    thead .manager-th { left: 40px; box-shadow: 2px 0 4px rgba(0,0,0,0.15); }
+    tr:hover .rank, tr:hover .manager { background: #f7f9ff; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🏆Badfish Libertadores🏆</h1>
+    <span id="last-updated"></span>
+  </header>
+  <div class="container">
+    <div class="controls">
+      <input type="search" id="search" placeholder="Search manager or team…">
+      <select id="chip-filter">
+        <option value="">All chips</option>
+        <option value="wildcard">Wildcard used</option>
+        <option value="freehit">Free Hit used</option>
+        <option value="3xc">Triple Captain used</option>
+        <option value="bboost">Bench Boost used</option>
+      </select>
+    </div>
+    <div id="status">Loading data…</div>
+    <div class="table-wrap" id="table-wrap" style="display:none">
+      <table id="standings">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th data-col="manager" class="manager-th">Manager / Team</th>
+            <th>Chips</th>
+            <th data-col="total" class="num">Total<br><span class="col-desc">Season total</span></th>
+            <th data-col="net" class="num">Points w/o Hits<br><span class="col-desc">Total ignoring transfer costs</span></th>
+            <th data-col="xtransfers" class="num">Extra Transfers<br><span class="col-desc">Hits taken this season</span></th>
+            <th data-col="bench" class="num">Bench Pts<br><span class="col-desc">Total bench pts, excl. Bench Boost GWs</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const CHIP_LABELS = { wildcard: 'WC', freehit: 'FH', '3xc': 'TC', bboost: 'BB' };
+
+    function chipBadges(chips) {
+      if (!chips || !chips.length) return '';
+      return chips.map(chip => {
+        const base = CHIP_LABELS[chip.name] || chip.name.toUpperCase();
+        return `<span class="chip chip-${chip.name}">${base}${chip.event}</span>`;
+      }).join(' ');
+    }
+
+    function sparkline(history) {
+      if (!history || !history.length) return '';
+      const pts = history.map(h => h.points);
+      const max = Math.max(...pts) || 1;
+      const bars = history.map(h => {
+        const height = Math.max(4, Math.round(h.points / max * 40));
+        return `<div class="bar" style="height:${height}px" title="GW${h.event}: ${h.points}pts"></div>`;
+      }).join('');
+      return `<div class="sparkline">${bars}</div>`;
+    }
+
+    function buildRow(entry, rank) {
+      const tr = document.createElement('tr');
+      tr.dataset.manager = (entry.player_name + ' ' + entry.entry_name).toLowerCase();
+      tr.dataset.chips = (entry.chips || []).map(c => c.name).join(' ');
+      tr.dataset.gw = entry.event_total || 0;
+      tr.dataset.total = entry.total || 0;
+      const netTotal = (entry.history || []).reduce((s, h) => s + h.points, 0);
+      const extraTransfers = Math.round((netTotal - (entry.total || 0)) / 4);
+      tr.dataset.rank = rank;
+      tr.dataset.net = netTotal;
+      tr.dataset.xtransfers = extraTransfers;
+      const bbWeeks = new Set((entry.chips || []).filter(c => c.name === 'bboost').map(c => c.event));
+      const totalBench = (entry.history || []).reduce((s, h) => bbWeeks.has(h.event) ? s : s + (h.points_on_bench || 0), 0);
+      tr.dataset.bench = totalBench;
+
+      const rankClass = rank <= 3 ? ` rank-${rank}` : '';
+      tr.innerHTML = `
+        <td class="rank${rankClass}">${rank}</td>
+        <td class="manager">${entry.player_name}<br><span class="team-name">${entry.entry_name}</span></td>
+        <td class="chips-cell">${chipBadges(entry.chips)}</td>
+        <td class="num">${entry.total || 0}</td>
+        <td class="num">${netTotal}</td>
+        <td class="num">${extraTransfers}</td>
+        <td class="num">${totalBench}</td>`;
+      return tr;
+    }
+
+    let allRows = [];
+
+    function applyFilters() {
+      const q = document.getElementById('search').value.toLowerCase();
+      const chip = document.getElementById('chip-filter').value;
+      allRows.forEach(r => {
+        const matchText = !q || r.dataset.manager.includes(q);
+        const matchChip = !chip || r.dataset.chips.includes(chip);
+        r.classList.toggle('hidden', !(matchText && matchChip));
+      });
+    }
+
+    const COL_MAP = { rank: 'rank', manager: 'manager', gw: 'gw', total: 'total', transfers: 'transfers', cost: 'cost', bench: 'bench' };
+    let sortCol = null, sortDir = 1;
+
+    document.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        sortDir = sortCol === col ? sortDir * -1 : 1;
+        sortCol = col;
+        document.querySelectorAll('th').forEach(t => t.classList.remove('sorted-asc', 'sorted-desc'));
+        th.classList.add(sortDir === 1 ? 'sorted-asc' : 'sorted-desc');
+
+        const tbody = document.getElementById('tbody');
+        allRows.sort((a, b) => {
+          const av = isNaN(a.dataset[col]) ? a.dataset[col] : +a.dataset[col];
+          const bv = isNaN(b.dataset[col]) ? b.dataset[col] : +b.dataset[col];
+          return av < bv ? -sortDir : av > bv ? sortDir : 0;
+        });
+        allRows.forEach((r, i) => { r.querySelector('.rank').textContent = i + 1; tbody.appendChild(r); });
+        applyFilters();
+      });
+    });
+
+    document.getElementById('search').addEventListener('input', applyFilters);
+    document.getElementById('chip-filter').addEventListener('change', applyFilters);
+
+    fetch('data/data.json')
+      .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+      .then(data => {
+        const tbody = document.getElementById('tbody');
+        allRows = data.map((entry, i) => buildRow(entry, i + 1));
+        allRows.forEach(r => tbody.appendChild(r));
+
+        document.getElementById('status').style.display = 'none';
+        document.getElementById('table-wrap').style.display = '';
+
+        const d = new Date();
+        document.getElementById('last-updated').textContent =
+          'Last updated: ' + d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      })
+      .catch(err => {
+        document.getElementById('status').textContent = 'Failed to load data: ' + err.message;
+      });
+  </script>
+</body>
+</html>
