@@ -1,6 +1,7 @@
 import json
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 LEAGUE_ID = 970015
@@ -65,7 +66,8 @@ def main():
 
     out = Path("data/data.json")
     out.parent.mkdir(exist_ok=True)
-    out.write_text(json.dumps(standings, indent=2))
+    payload = {"updated_at": datetime.now(timezone.utc).isoformat(), "standings": standings}
+    out.write_text(json.dumps(payload, indent=2))
     print(f"Saved {len(standings)} entries to {out}")
 
 
