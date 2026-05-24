@@ -76,6 +76,7 @@
             <th data-col="manager" class="manager-th">Manager / Team</th>
             <th>Chips</th>
             <th data-col="total" class="num">Total<br><span class="col-desc">Season total</span></th>
+            <th class="num">+/-<br><span class="col-desc">Gap to next in table</span></th>
             <th data-col="net" class="num">Points w/o Hits<br><span class="col-desc">Total ignoring transfer costs</span></th>
             <th data-col="xtransfers" class="num">Extra Transfers<br><span class="col-desc">Hits taken this season</span></th>
             <th data-col="bench" class="num">Bench Pts<br><span class="col-desc">Total bench pts, excl. Bench Boost GWs</span></th>
@@ -129,6 +130,7 @@
         <td class="manager">${entry.player_name}<br><span class="team-name">${entry.entry_name}</span></td>
         <td class="chips-cell">${chipBadges(entry.chips)}</td>
         <td class="num">${entry.total || 0}</td>
+        <td class="num diff-cell"></td>
         <td class="num">${netTotal}</td>
         <td class="num">${extraTransfers}</td>
         <td class="num">${totalBench}</td>`;
@@ -136,6 +138,19 @@
     }
 
     let allRows = [];
+
+    function updateDiffs() {
+      const visible = allRows.filter(r => !r.classList.contains('hidden'));
+      visible.forEach((r, i) => {
+        const cell = r.querySelector('.diff-cell');
+        if (i === 0) {
+          cell.textContent = '—';
+        } else {
+          const diff = +visible[i - 1].dataset.total - +r.dataset.total;
+          cell.textContent = diff === 0 ? '=' : `-${diff}`;
+        }
+      });
+    }
 
     function applyFilters() {
       const q = document.getElementById('search').value.toLowerCase();
@@ -145,6 +160,7 @@
         const matchChip = !chip || r.dataset.chips.includes(chip);
         r.classList.toggle('hidden', !(matchText && matchChip));
       });
+      updateDiffs();
     }
 
     const COL_MAP = { rank: 'rank', manager: 'manager', gw: 'gw', total: 'total', transfers: 'transfers', cost: 'cost', bench: 'bench' };
@@ -166,6 +182,7 @@
         });
         allRows.forEach((r, i) => { r.querySelector('.rank').textContent = i + 1; tbody.appendChild(r); });
         applyFilters();
+        updateDiffs();
       });
     });
 
@@ -181,6 +198,7 @@
 
         document.getElementById('status').style.display = 'none';
         document.getElementById('table-wrap').style.display = '';
+        updateDiffs();
 
         const d = new Date();
         document.getElementById('last-updated').textContent =
