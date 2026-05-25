@@ -42,6 +42,12 @@
     .chips-cell { white-space: nowrap; }
     .col-desc { font-size: 0.7rem; font-weight: 400; opacity: 0.65; text-transform: none; letter-spacing: 0; }
     .hidden { display: none; }
+    .facts-title { font-size: 1rem; font-weight: 700; margin: 2rem 0 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #1a1a2e; }
+    .facts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; margin-bottom: 2rem; }
+    .fact-card { background: #fff; border-radius: 10px; padding: 1rem 1.1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+    .fact-card .fact-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #888; margin-bottom: 0.3rem; }
+    .fact-card .fact-value { font-size: 1.1rem; font-weight: 700; color: #1a1a2e; }
+    .fact-card .fact-sub { font-size: 0.8rem; color: #555; margin-top: 0.2rem; }
     #status { padding: 2rem; text-align: center; color: #888; }
     .rank { position: sticky; left: 0; background: #fff; z-index: 1; }
     .manager { position: sticky; left: 40px; background: #fff; z-index: 1; box-shadow: 2px 0 4px rgba(0,0,0,0.06); }
@@ -84,6 +90,10 @@
         </thead>
         <tbody id="tbody"></tbody>
       </table>
+    </div>
+    <div id="facts" style="display:none">
+      <h2 class="facts-title">Fun Facts</h2>
+      <div class="facts-grid" id="facts-grid"></div>
     </div>
   </div>
 
@@ -189,6 +199,93 @@
     document.getElementById('search').addEventListener('input', applyFilters);
     document.getElementById('chip-filter').addEventListener('change', applyFilters);
 
+    function fact(label, value, sub) {
+      return `<div class="fact-card"><div class="fact-label">${label}</div><div class="fact-value">${value}</div>${sub ? `<div class="fact-sub">${sub}</div>` : ''}</div>`;
+    }
+
+    function renderFacts(standings) {
+      let bestGW = { pts: 0, name: '', gw: 0 };
+      let worstGW = { pts: Infinity, name: '', gw: 0 };
+      let mostHits = { count: 0, name: '' };
+      let consistencyList = [];
+      let bestTC = null, bestBB = null;
+
+      standings.forEach(e => {
+        const history = e.history || [];
+        const name = e.player_name;
+
+        history.forEach(h => {
+          if (h.points > bestGW.pts) bestGW = { pts: h.points, name, gw: h.event };
+          if (h.points < worstGW.pts) worstGW = { pts: h.points, name, gw: h.event };
+        });
+
+        const hits = Math.round((history.reduce((s, h) => s + h.points, 0) - (e.total || 0)) / 4);
+        if (hits > mostHits.count) mostHits = { count: hits, name };
+
+        if (history.length > 1) {
+          const pts = history.map(h => h.points);
+          const mean = pts.reduce((a, b) => a + b, 0) / pts.length;
+          const stddev = Math.sqrt(pts.reduce((s, p) => s + (p - mean) ** 2, 0) / pts.length);
+          consistencyList.push({ name, stddev: Math.round(stddev * 10) / 10 });
+        }
+
+        (e.chips || []).forEach(chip => {
+          const gw = history.find(h => h.event === chip.event);
+          if (!gw) return;
+          if (chip.name === '3xc' && (!bestTC || gw.points > bestTC.pts))
+            bestTC = { pts: gw.points, name, gw: chip.event };
+          if (chip.name === 'bboost' && (!bestBB || gw.points > bestBB.pts))
+            bestBB = { pts: gw.points, name, gw: chip.event };
+        });
+      });
+
+      consistencyList.sort((a, b) => a.stddev - b.stddev);
+
+      const benchSorted = [...standings].sort((a, b) => {
+        const ba = (a.history || []).reduce((s, h) => s + (h.points_on_bench || 0), 0);
+        const bb = (b.history || []).reduce((s, h) => s + (h.points_on_bench || 0), 0);
+        return bb - ba;
+      });
+      const topBench = benchSorted[0];
+      const topBenchPts = (topBench.history || []).reduce((s, h) => s + (h.points_on_bench || 0), 0);
+
+      // Hot streak: most consecutive top-3 GW finishes in the league
+      const allGWs = [...new Set(standings.flatMap(e => (e.history || []).map(h => h.event)))].sort((a, b) => a - b);
+      const gwRanks = {};
+      standings.forEach(e => { gwRanks[e.entry] = []; });
+      allGWs.forEach(gw => {
+        const scores = standings.map(e => {
+          const h = (e.history || []).find(h => h.event === gw);
+          return { entry: e.entry, pts: h ? h.points : 0 };
+        }).sort((a, b) => b.pts - a.pts);
+        scores.forEach((s, i) => gwRanks[s.entry].push(i + 1));
+      });
+
+      let hotStreak = { count: 0, name: '' };
+      standings.forEach(e => {
+        const ranks = gwRanks[e.entry] || [];
+        let streak = 0;
+        ranks.forEach(r => {
+          if (r <= 3) { streak++; if (streak > hotStreak.count) hotStreak = { count: streak, name: e.player_name }; }
+          else streak = 0;
+        });
+      });
+
+      const cards = [
+        fact('🔥 Best single GW', `${bestGW.pts} pts`, `${bestGW.name} — GW${bestGW.gw}`),
+        fact('😬 Worst single GW', `${worstGW.pts} pts`, `${worstGW.name} — GW${worstGW.gw}`),
+        fact('🩸 Most hits taken', `${mostHits.count} hits`, `${mostHits.name} (-${mostHits.count * 4} pts)`),
+        fact('😴 Most bench pts', `${topBenchPts} pts`, topBench.player_name),
+        consistencyList.length ? fact('🎯 Most consistent', `±${consistencyList[0].stddev}`, consistencyList[0].name) : '',
+        hotStreak.count > 0 ? fact('🌶️ Longest hot streak', `${hotStreak.count} GWs`, `${hotStreak.name} — top 3 each week`) : '',
+        bestTC ? fact('⚡ Best Triple Captain GW', `${bestTC.pts} pts`, `${bestTC.name} — GW${bestTC.gw}`) : '',
+        bestBB ? fact('🪑 Best Bench Boost GW', `${bestBB.pts} pts`, `${bestBB.name} — GW${bestBB.gw}`) : '',
+      ].filter(Boolean).join('');
+
+      document.getElementById('facts-grid').innerHTML = cards;
+      document.getElementById('facts').style.display = '';
+    }
+
     fetch('data/data.json')
       .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
       .then(({ updated_at, standings }) => {
@@ -199,6 +296,7 @@
         document.getElementById('status').style.display = 'none';
         document.getElementById('table-wrap').style.display = '';
         updateDiffs();
+        renderFacts(standings);
 
         const d = new Date(updated_at);
         document.getElementById('last-updated').textContent =
